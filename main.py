@@ -49,7 +49,7 @@ with st.sidebar:
         if pw == "3383":
             st.success("인증되었습니다.")
             sel_class = st.selectbox("수업 선택", ["인하대 소비자재무설계", "숙대 소비자재무설계1_001", "숙대 소비자재무설계1_002"])
-            sel_week = st.number_input("수업 주차", 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14)
+            sel_week = st.number_input("수업 주차", min_value=1, max_value=14, value=2)
             
             # 현재 상태 제어
             status = supabase.table("class_status").select("*").eq("class_name", sel_class).execute()
@@ -117,4 +117,5 @@ if mode == "교수 관리" and pw == "3383":
         
         if st.checkbox("학생별 누적 참여 점수 확인"):
             summary = df.groupby(['std_id', 'std_name'])['score'].sum().reset_index()
+
             st.dataframe(summary.sort_values(by='score', ascending=False))
