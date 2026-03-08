@@ -41,7 +41,7 @@ supabase = create_client(url, key)
 
 st.set_page_config(page_title="소비자재무설계 라이브 참여", layout="wide")
 
-# 세션 스테이트 초기화 (정보 기억)
+# 세션 스테이트 초기화 (정보 기억 및 새로고침 방어)
 if "std_name" not in st.session_state:
     st.session_state.std_name = st.query_params.get("name", "")
 if "std_id" not in st.session_state:
@@ -92,6 +92,7 @@ if mode == "학생 참여":
             
             st.info(f"🎓 {st.session_state.std_name}({st.session_state.std_id})님 환영합니다! | {curr_class} {curr_week}주차")
             
+            # 중복 제출 확인 로직
             check = supabase.table("responses").select("*")\
                 .eq("std_id", st.session_state.std_id)\
                 .eq("class_name", curr_class)\
@@ -101,7 +102,7 @@ if mode == "학생 참여":
             st.divider()
             
             if len(check.data) > 0:
-                st.warning(f"✅ '{item.get('q', item.get('title'))}' 과제 제출을 완료했습니다.")
+                st.warning(f"✅ 과제 제출을 완료했습니다: {item.get('q', item.get('title'))}")
                 st.write(f"제출 내용: **{check.data[0]['response']}**")
                 st.info("교수님이 다음 문제로 넘길 때까지 기다려주세요.")
                 if st.button("🔄 다음 문제 확인"):
@@ -120,7 +121,7 @@ if mode == "학생 참여":
                             st.balloons()
                             st.rerun()
 
-                    elif item['type'] == "balance", "id": 2, "id": 5:
+                    elif item['type'] == "balance":  # 문법 오류 수정됨
                         ans = st.radio("선택해주세요", item['opt'])
                         if st.form_submit_button("참여하기"):
                             supabase.table("responses").insert({"class_name": curr_class, "week_no": curr_week, "std_id": st.session_state.std_id, "std_name": st.session_state.std_name, "item_id": item['id'], "item_type": "balance", "response": ans, "score": 1.0}).execute()
@@ -143,31 +144,29 @@ if mode == "교수 관리" and pw == "3383":
     df = pd.DataFrame(res.data)
     
     if not df.empty:
-        curr_item_id = lecture_data[idx]['id']
+        active_session = supabase.table("active_session").select("*").eq("id", 1).execute()
+        curr_idx = active_session.data[0]['current_item_idx'] if active_session.data else 0
+        curr_item_id = lecture_data[curr_idx]['id']
         curr_df = df[df['item_id'] == curr_item_id]
         
         if not curr_df.empty:
-            # 1. 데이터 집계
             chart_data = curr_df['response'].value_counts().reset_index()
             chart_data.columns = ['응답내용', '인원수']
             
-            # 2. Altair 차트 설정
+            # Altair를 이용한 커스텀 차트 (요청 사항 반영)
             chart = alt.Chart(chart_data).mark_bar(
-                color='#E63946',  # 세련된 레드 계열
-                size=60          # 막대 두께 (슬림하게 조정)
+                color='#E63946',  # 붉은 계열 색상
+                size=50          # 막대 두께 슬림하게
             ).encode(
                 x=alt.X('응답내용:N', 
                         axis=alt.Axis(labelAngle=0, labelFontSize=15, titleFontSize=16), 
                         title='응답 선택지'),
                 y=alt.Y('인원수:Q', 
                         axis=alt.Axis(tickMinStep=1, labelFontSize=15, titleFontSize=16), 
-                        title='참여 인원(명)')
+                        title='인원수(명)')
             ).properties(
-                height=450  # 차트 높이
-            ).configure_view(
-                strokeOpacity=0 # 테두리 제거
+                height=400
             )
-            
             st.altair_chart(chart, use_container_width=True)
         
         with st.expander("🎓 학생별 누적 참여 점수 확인"):
