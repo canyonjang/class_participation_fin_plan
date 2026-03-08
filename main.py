@@ -32,6 +32,7 @@ lecture_data = [
     # 9. 퀴즈: 재무 스트레스 (41p)
     {"type": "quiz", "id": 9, "q": "주부들이 지출 스트레스보다 더 강하게 느끼는 것은?", "opt": ["소득 스트레스", "자산 스트레스", "부채 스트레스"], "ans": "자산 스트레스"}
 ]
+# --------------------------------------------
 
 # 수파베이스 연결
 url = st.secrets["SUPABASE_URL"]
@@ -40,11 +41,12 @@ supabase = create_client(url, key)
 
 st.set_page_config(page_title="소비자재무설계 라이브 참여", layout="wide")
 
-# --- 세션 스테이트 초기화 (정보 기억용) ---
-if "std_info_saved" not in st.session_state:
-    st.session_state.std_info_saved = False
-    st.session_state.std_name = ""
-    st.session_state.std_id = ""
+# --- 쿼리 파라미터 기반 정보 복구 로직 ---
+# 주소창에 이름/학번 정보가 있다면 세션에 자동으로 채워줍니다.
+if "std_name" not in st.session_state:
+    st.session_state.std_name = st.query_params.get("name", "")
+if "std_id" not in st.session_state:
+    st.session_state.std_id = st.query_params.get("id", "")
 
 # 사이드바 설정
 with st.sidebar:
@@ -53,7 +55,7 @@ with st.sidebar:
         pw = st.text_input("교수 비밀번호", type="password")
         if pw == "3383":
             st.success("관리자 모드 활성화")
-            sel_class = st.selectbox("진행할 수업 선택", ["인하대 소비자재무설계", "숙대 소비자재무설계1_001", "숙대 소비자재무설계1_002"])
+            sel_class = st.selectbox("수업 선택", ["인하대 소비자재무설계", "숙대 소비자재무설계1_001", "숙대 소비자재무설계1_002"])
             sel_week = st.number_input("진행 주차", min_value=1, max_value=14, value=2)
             
             active_data = supabase.table("active_session").select("*").eq("id", 1).execute()
@@ -68,22 +70,26 @@ with st.sidebar:
 
 # --- 학생 참여 화면 ---
 if mode == "학생 참여":
-    # 1. 정보가 저장되지 않았다면 입력창을 띄움
-    if not st.session_state.std_info_saved:
+    # 이름이나 학번이 주소창/세션에 모두 없으면 입력창 표시
+    if not st.session_state.std_name or not st.session_state.std_id:
         st.header("👋 반갑습니다! 정보를 입력해주세요.")
         col1, col2 = st.columns(2)
         in_name = col1.text_input("이름")
         in_id = col2.text_input("학번")
+        
         if st.button("수업 참여하기"):
             if in_name and in_id:
+                # 1. 세션에 저장
                 st.session_state.std_name = in_name
                 st.session_state.std_id = in_id
-                st.session_state.std_info_saved = True
+                # 2. 주소창(URL)에 저장 (새로고침 대비)
+                st.query_params["name"] = in_name
+                st.query_params["id"] = in_id
                 st.rerun()
             else:
                 st.error("이름과 학번을 모두 입력해주세요.")
     
-    # 2. 정보가 저장된 후의 화면
+    # 정보가 있는 경우 (정상 참여 상태)
     else:
         active = supabase.table("active_session").select("*").eq("id", 1).execute()
         
@@ -94,12 +100,17 @@ if mode == "학생 참여":
             item = lecture_data[curr_idx]
             
             st.info(f"🎓 {st.session_state.std_name}({st.session_state.std_id})님 환영합니다! | {curr_class} {curr_week}주차")
-            if st.button("정보 수정"): # 정보가 틀렸을 때를 대비한 리셋 버튼
-                st.session_state.std_info_saved = False
+            if st.button("정보 수정 (로그아웃)"):
+                st.session_state.std_name = ""
+                st.session_state.std_id = ""
+                st.query_params.clear() # 주소창 정보도 삭제
                 st.rerun()
 
             st.divider()
-            # 폼(Form)을 사용해 한 번 제출하면 그 자리에 결과만 표시
+            # 새로고침 없이도 교수님이 넘긴 정보를 반영하기 위한 버튼
+            if st.button("🔄 다음 문제 확인 (수동 새로고침)"):
+                st.rerun()
+
             with st.form(f"live_form_{curr_idx}"):
                 st.markdown(f"### Q. {item.get('q', item.get('title'))}")
                 
