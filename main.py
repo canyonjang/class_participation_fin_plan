@@ -33,12 +33,18 @@ lecture_data = [
     {"type": "quiz", "id": 9, "q": "주부들이 지출 스트레스보다 더 강하게 느끼는 것은?", "opt": ["소득 스트레스", "자산 스트레스", "부채 스트레스"], "ans": "자산 스트레스"}
 ]
 
-# 수파베이스 연결 (Secrets 설정 필요)
+# 수파베이스 연결
 url = st.secrets["SUPABASE_URL"]
 key = st.secrets["SUPABASE_KEY"]
 supabase = create_client(url, key)
 
 st.set_page_config(page_title="소비자재무설계 라이브 참여", layout="wide")
+
+# --- 세션 스테이트 초기화 (정보 기억용) ---
+if "std_info_saved" not in st.session_state:
+    st.session_state.std_info_saved = False
+    st.session_state.std_name = ""
+    st.session_state.std_id = ""
 
 # 사이드바 설정
 with st.sidebar:
@@ -48,9 +54,8 @@ with st.sidebar:
         if pw == "3383":
             st.success("관리자 모드 활성화")
             sel_class = st.selectbox("진행할 수업 선택", ["인하대 소비자재무설계", "숙대 소비자재무설계1_001", "숙대 소비자재무설계1_002"])
-            sel_week = st.number_input("진행 주차", min_value=1, max_value=14, value=2) # 에러 수정됨
+            sel_week = st.number_input("진행 주차", min_value=1, max_value=14, value=2)
             
-            # 현재 전광판 정보 가져오기
             active_data = supabase.table("active_session").select("*").eq("id", 1).execute()
             idx = active_data.data[0]['current_item_idx'] if active_data.data else 0
             
@@ -61,24 +66,40 @@ with st.sidebar:
                 }).execute()
                 st.rerun()
 
-# --- 학생 참여 화면 (교수 제어에 따라 자동 고정) ---
+# --- 학생 참여 화면 ---
 if mode == "학생 참여":
-    st.header("📝 실시간 강의 응답")
-    active = supabase.table("active_session").select("*").eq("id", 1).execute()
+    # 1. 정보가 저장되지 않았다면 입력창을 띄움
+    if not st.session_state.std_info_saved:
+        st.header("👋 반갑습니다! 정보를 입력해주세요.")
+        col1, col2 = st.columns(2)
+        in_name = col1.text_input("이름")
+        in_id = col2.text_input("학번")
+        if st.button("수업 참여하기"):
+            if in_name and in_id:
+                st.session_state.std_name = in_name
+                st.session_state.std_id = in_id
+                st.session_state.std_info_saved = True
+                st.rerun()
+            else:
+                st.error("이름과 학번을 모두 입력해주세요.")
     
-    if active.data:
-        curr_class = active.data[0]['class_name']
-        curr_week = active.data[0]['week_no']
-        curr_idx = active.data[0]['current_item_idx']
-        item = lecture_data[curr_idx]
+    # 2. 정보가 저장된 후의 화면
+    else:
+        active = supabase.table("active_session").select("*").eq("id", 1).execute()
         
-        st.subheader(f"📍 현재 수업: {curr_class} ({curr_week}주차)")
-        c1, c2 = st.columns(2)
-        name = c1.text_input("이름")
-        std_id = c2.text_input("학번")
+        if active.data:
+            curr_class = active.data[0]['class_name']
+            curr_week = active.data[0]['week_no']
+            curr_idx = active.data[0]['current_item_idx']
+            item = lecture_data[curr_idx]
+            
+            st.info(f"🎓 {st.session_state.std_name}({st.session_state.std_id})님 환영합니다! | {curr_class} {curr_week}주차")
+            if st.button("정보 수정"): # 정보가 틀렸을 때를 대비한 리셋 버튼
+                st.session_state.std_info_saved = False
+                st.rerun()
 
-        if name and std_id:
             st.divider()
+            # 폼(Form)을 사용해 한 번 제출하면 그 자리에 결과만 표시
             with st.form(f"live_form_{curr_idx}"):
                 st.markdown(f"### Q. {item.get('q', item.get('title'))}")
                 
@@ -86,30 +107,39 @@ if mode == "학생 참여":
                     a1 = st.radio(item['questions'][0]['q'], item['questions'][0]['opt'])
                     a2 = st.radio(item['questions'][1]['q'], item['questions'][1]['opt'])
                     if st.form_submit_button("유형 분석 제출"):
-                        # 유형 판별 로직 
                         res = f"{'좋음' if '좋은' in a1 else '나쁨'}/{'만족' if '만족' in a2 else '불만족'}"
-                        supabase.table("responses").insert({"class_name": curr_class, "week_no": curr_week, "std_id": std_id, "std_name": name, "item_id": item['id'], "item_type": "qr_survey", "response": res, "score": 1.0}).execute()
+                        supabase.table("responses").insert({
+                            "class_name": curr_class, "week_no": curr_week, "std_id": st.session_state.std_id, "std_name": st.session_state.std_name,
+                            "item_id": item['id'], "item_type": "qr_survey", "response": res, "score": 1.0
+                        }).execute()
+                        st.balloons()
                         st.success(f"제출 완료! 당신의 유형: {res}")
 
                 elif item['type'] == "balance":
                     ans = st.radio("선택해주세요", item['opt'])
                     if st.form_submit_button("참여하기"):
-                        supabase.table("responses").insert({"class_name": curr_class, "week_no": curr_week, "std_id": std_id, "std_name": name, "item_id": item['id'], "item_type": "balance", "response": ans, "score": 1.0}).execute()
+                        supabase.table("responses").insert({
+                            "class_name": curr_class, "week_no": curr_week, "std_id": st.session_state.std_id, "std_name": st.session_state.std_name,
+                            "item_id": item['id'], "item_type": "balance", "response": ans, "score": 1.0
+                        }).execute()
                         st.success("참여 점수가 기록되었습니다.")
 
                 elif item['type'] == "quiz":
                     ans = st.radio("정답은?", item['opt'])
                     if st.form_submit_button("정답 제출"):
                         score = 1.0 if ans == item['ans'] else 0.5
-                        supabase.table("responses").insert({"class_name": curr_class, "week_no": curr_week, "std_id": std_id, "std_name": name, "item_id": item['id'], "item_type": "quiz", "response": ans, "score": score}).execute()
-                        st.success("응답이 제출되었습니다!")
-    else:
-        st.warning("진행 중인 수업이 없습니다. 교수님의 시작 버튼을 기다려주세요.")
+                        supabase.table("responses").insert({
+                            "class_name": curr_class, "week_no": curr_week, "std_id": st.session_state.std_id, "std_name": st.session_state.std_name,
+                            "item_id": item['id'], "item_type": "quiz", "response": ans, "score": score
+                        }).execute()
+                        st.success("퀴즈 응답이 제출되었습니다!")
+        else:
+            st.warning("교수님의 시작 버튼을 기다려주세요.")
 
-# --- 교수용 실시간 통계 모니터링 ---
+# --- 교수용 결과 모니터링 ---
 if mode == "교수 관리" and pw == "3383":
     st.divider()
-    st.subheader(f"📊 {sel_class} 실시간 참여 현황")
+    st.subheader(f"📊 {sel_class} {sel_week}주차 실시간 통계")
     res = supabase.table("responses").select("*").eq("class_name", sel_class).eq("week_no", sel_week).execute()
     df = pd.DataFrame(res.data)
     
