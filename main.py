@@ -59,22 +59,34 @@ with st.sidebar:
             sel_class = st.selectbox("수업 선택", ["인하대 소비자재무설계", "숙대 소비자재무설계1_001", "숙대 소비자재무설계1_002"])
             sel_week = st.number_input("진행 주차", min_value=1, max_value=14, value=2)
             
-            # 선택한 주차의 문제 리스트만 가져옴
+            # 선택한 주차의 문제 리스트 가져오기
             current_week_data = all_lecture_data.get(sel_week, [])
             
             if not current_week_data:
-                st.warning(f"{sel_week}주차 데이터가 코드에 등록되지 않았습니다.")
+                st.warning(f"⚠️ {sel_week}주차 데이터가 코드에 등록되지 않았습니다.")
             else:
+                # 수파베이스에서 기존 진행 정보 가져오기
                 active_data = supabase.table("active_session").select("*").eq("id", 1).execute()
-                idx = active_data.data[0]['current_item_idx'] if active_data.data else 0
+                stored_idx = active_data.data[0]['current_item_idx'] if active_data.data else 0
                 
-                # 슬라이더 범위를 해당 주차의 문제 수로 자동 조절
-                new_idx = st.select_slider("문제 진행 상황", options=range(len(current_week_data)), value=min(idx, len(current_week_data)-1))
+                # [수정 포인트] 문제가 2개 이상일 때만 슬라이더 표시
+                if len(current_week_data) > 1:
+                    new_idx = st.select_slider(
+                        "문제 진행 상황", 
+                        options=range(len(current_week_data)), 
+                        value=min(stored_idx, len(current_week_data)-1),
+                        format_func=lambda x: f"{x+1}번 문제"
+                    )
+                else:
+                    # 문제가 1개인 경우 슬라이더 없이 0번 인덱스 고정
+                    st.info("문제가 1개 등록되어 있습니다.")
+                    new_idx = 0
                 
                 if st.button("📢 이 설정으로 수업 시작"):
                     supabase.table("active_session").upsert({
                         "id": 1, "class_name": sel_class, "week_no": sel_week, "current_item_idx": new_idx
                     }).execute()
+                    st.success(f"{sel_week}주차 {new_idx+1}번 문제로 세팅되었습니다.")
                     st.rerun()
 
 # --- 학생 참여 화면 ---
@@ -174,3 +186,4 @@ if mode == "교수 관리" and pw == "3383":
             with st.expander("🎓 학생별 이번 주 참여 점수 확인"):
                 summary = df.groupby(['std_id', 'std_name'])['score'].sum().reset_index()
                 st.dataframe(summary.sort_values(by='score', ascending=False), use_container_width=True)
+
