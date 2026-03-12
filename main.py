@@ -129,7 +129,7 @@ if mode == "학생 참여":
                 
                 if len(check.data) > 0:
                     st.warning(f"✅ 제출 완료: {item.get('q', item.get('title'))}")
-                    if st.button("🔄 다음 문제 확인 (새로고침)"):
+                    if st.button("🔄 다음 문제 확인 (교수님이 안내하면 누르세요)"):
                         st.rerun()
                 else:
                     with st.form(f"live_form_{curr_week}_{curr_idx}"):
@@ -186,4 +186,5 @@ if mode == "교수 관리" and pw == "3383":
             with st.expander("🎓 학생별 이번 주 참여 점수 확인"):
                 summary = df.groupby(['std_id', 'std_name'])['score'].sum().reset_index()
                 st.dataframe(summary.sort_values(by='score', ascending=False), use_container_width=True)
+
 
