@@ -263,7 +263,7 @@ if mode == "학생 참여":
 if mode == "교수 관리" and pw == "3383":
     st.divider()
     st.subheader(f"📊 {sel_class} {sel_week}주차 실시간 통계")
-    res = supabase.table("responses").select("*").eq("class_name", sel_class).eq("week_no", sel_week).execute()
+    res = supabase.table("responses").select("*").eq("class_name", sel_class).eq("week_no", sel_week).limit(5000).execute()
     df = pd.DataFrame(res.data)
     
     if not df.empty:
